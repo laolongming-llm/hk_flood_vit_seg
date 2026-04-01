@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+﻿#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
 """
@@ -6,7 +6,8 @@
 
 目标：
 - 将香港地区 OSM `.osm.pbf` 数据转换为 GeoPackage（`.gpkg`）主工作库；
-- 在转换阶段尽量保留原始 OSM 标签信息，支撑后续 QGIS 人工清洗、类别映射与语义分割标签构建。
+- 在转换阶段尽量保留原始 OSM 标签信息，支撑后续 QGIS 人工清洗、类别映射与语义分割标签构建；
+- 从主库中派生导出“香港行政边界”与清洗后的 `multipolygons` 面，用于后续制图与标注处理。
 
 设计原则：
 - 优先使用 GDAL/OGR 官方 OSM Driver；
@@ -37,6 +38,8 @@ PROJECT_ROOT: Final[Path] = Path(__file__).resolve().parents[1]
 DEFAULT_INPUT_PBF: Final[Path] = PROJECT_ROOT / "data" / "raw" / "osm" / "hong-kong-260330.osm.pbf"
 DEFAULT_OUTPUT_DIR: Final[Path] = PROJECT_ROOT / "data" / "interim" / "gpkg"
 DEFAULT_TMP_DIR: Final[Path] = PROJECT_ROOT / "data" / "interim" / "temp" / "gdal_osm"
+DEFAULT_DROP_FIDS: Final[tuple[int, ...]] = (1588, 79386, 111736)
+DEFAULT_HK_BOUNDARY_NAME: Final[str] = "香港 Hong Kong"
 
 EXPECTED_OSM_LAYERS: Final[tuple[str, ...]] = (
     "points",
@@ -69,15 +72,18 @@ def to_abs_path(path_str: str) -> Path:
     return p.resolve()
 
 
+def sql_quote_literal(value: str) -> str:
+    """将字符串安全转为 SQL 单引号字面量。"""
+    return "'" + value.replace("'", "''") + "'"
+
+
 def infer_output_gpkg_path(input_pbf: Path, output_arg: str) -> Path:
     """支持 `--output` 传目录或文件路径；目录模式下自动推断输出文件名。"""
     output_path = to_abs_path(output_arg)
 
-    # 传入明确文件名：直接使用
     if output_path.suffix.lower() == ".gpkg":
         return output_path
 
-    # 传入目录：按输入文件名生成 .gpkg
     input_name = input_pbf.name
     if input_name.endswith(".osm.pbf"):
         stem = input_name[: -len(".osm.pbf")]
@@ -85,6 +91,42 @@ def infer_output_gpkg_path(input_pbf: Path, output_arg: str) -> Path:
         stem = input_pbf.stem
 
     return output_path / f"{stem}.gpkg"
+
+
+def infer_hk_boundary_output_path(main_output_gpkg: Path, user_value: str | None) -> Path:
+    """推断香港行政边界导出路径。"""
+    if user_value:
+        p = to_abs_path(user_value)
+        return p if p.suffix.lower() == ".gpkg" else p / f"{main_output_gpkg.stem}_hk_boundary.gpkg"
+    return main_output_gpkg.with_name(f"{main_output_gpkg.stem}_hk_boundary.gpkg")
+
+
+def infer_clean_output_path(main_output_gpkg: Path, user_value: str | None) -> Path:
+    """推断 multipolygons clean 导出路径。"""
+    if user_value:
+        p = to_abs_path(user_value)
+        return p if p.suffix.lower() == ".gpkg" else p / f"{main_output_gpkg.stem}_multipolygons_clean.gpkg"
+    return main_output_gpkg.with_name(f"{main_output_gpkg.stem}_multipolygons_clean.gpkg")
+
+
+def parse_drop_fids(value: str) -> list[int]:
+    """解析 `--drop-fids`，格式示例：`1588,79386,111736`。"""
+    cleaned = value.strip()
+    if not cleaned:
+        return []
+
+    parsed: list[int] = []
+    for token in cleaned.split(","):
+        t = token.strip()
+        if not t:
+            continue
+        try:
+            fid = int(t)
+        except ValueError as exc:
+            raise ValueError(f"--drop-fids 含非法值：{t}") from exc
+        parsed.append(fid)
+
+    return list(dict.fromkeys(parsed))
 
 
 def ensure_osm_driver_available() -> None:
@@ -109,12 +151,10 @@ def find_default_osmconf(explicit_path: str | None = None) -> Path:
 
     candidates: list[Path] = []
 
-    # 1) 环境变量 / GDAL 配置
     gdal_data = os.environ.get("GDAL_DATA") or gdal.GetConfigOption("GDAL_DATA")
     if gdal_data:
         candidates.append(Path(gdal_data) / "osmconf.ini")
 
-    # 2) Windows 常见 Conda 路径
     candidates.extend(
         [
             Path(sys.prefix) / "Library" / "share" / "gdal" / "osmconf.ini",
@@ -123,7 +163,6 @@ def find_default_osmconf(explicit_path: str | None = None) -> Path:
         ]
     )
 
-    # 3) 尝试从 osgeo 包附近定位（Windows 下常见）
     try:
         import osgeo  # noqa: F401
 
@@ -233,7 +272,6 @@ def convert_pbf_to_gpkg(
     gdal_version_num = int(gdal.VersionInfo("VERSION_NUM"))
     supports_json_tags = gdal_version_num >= 3070000
 
-    # 对应 ogr2ogr / gdal vector translate 的标准参数风格
     options = [
         "-f",
         "GPKG",
@@ -283,19 +321,67 @@ def convert_pbf_to_gpkg(
     print("转换完成。")
 
 
-def summarize_output_layers(output_gpkg: Path) -> None:
-    """输出图层摘要，便于快速检查是否成功保留核心 OSM 图层。"""
+def export_multipolygon_subset(
+    source_gpkg: Path,
+    output_gpkg: Path,
+    sql: str,
+    out_layer_name: str = "multipolygons",
+    overwrite: bool = True,
+) -> None:
+    """从主库中按 SQL 导出 multipolygons 子集到独立 GPKG。"""
+    require_gdal()
+    gdal.UseExceptions()
+
+    output_gpkg.parent.mkdir(parents=True, exist_ok=True)
+
+    if output_gpkg.exists():
+        if not overwrite:
+            raise FileExistsError(f"输出文件已存在: {output_gpkg}")
+        cleanup_existing_gpkg(output_gpkg)
+
+    options = [
+        "-f",
+        "GPKG",
+        "-dialect",
+        "SQLITE",
+        "-sql",
+        sql,
+        "-nln",
+        out_layer_name,
+        "-dsco",
+        "VERSION=1.4",
+        "-lco",
+        "SPATIAL_INDEX=YES",
+        "-progress",
+    ]
+
+    ds = gdal.VectorTranslate(
+        destNameOrDestDS=str(output_gpkg),
+        srcDS=str(source_gpkg),
+        options=gdal.VectorTranslateOptions(options=options),
+    )
+    if ds is None:
+        raise RuntimeError(f"子集导出失败: {output_gpkg}")
+    ds = None
+
+
+def summarize_output_layers(
+    output_gpkg: Path,
+    title: str = "输出图层概览",
+    check_expected_layers: bool = False,
+) -> None:
+    """输出图层摘要，便于快速检查。"""
     require_gdal()
 
     info = gdal.VectorInfo(str(output_gpkg), format="json", deserialize=True)
     layers = info.get("layers", []) if isinstance(info, dict) else []
 
     if not layers:
-        print("[警告] 未读取到图层信息，请在 QGIS 中手动核验。")
+        print(f"[警告] {output_gpkg.name} 未读取到图层信息，请在 QGIS 中手动核验。")
         return
 
-    print("\n输出图层概览：")
-    observed = []
+    print(f"\n{title}：{output_gpkg.name}")
+    observed: list[str] = []
     for layer in layers:
         name = layer.get("name", "UNKNOWN")
         geom = layer.get("geometryType", "UNKNOWN")
@@ -303,17 +389,64 @@ def summarize_output_layers(output_gpkg: Path) -> None:
         observed.append(name)
         print(f"  - 图层: {name:<18} 几何类型: {geom:<20} 要素数: {feat_count}")
 
-    missing = [name for name in EXPECTED_OSM_LAYERS if name not in observed]
-    if missing:
-        print("\n[提示] 以下预期 OSM 图层未出现在输出中：")
-        for name in missing:
-            print(f"  - {name}")
-        print("这不一定是错误，但建议在 QGIS 中检查是否因区域数据本身为空导致。")
+    if check_expected_layers:
+        missing = [name for name in EXPECTED_OSM_LAYERS if name not in observed]
+        if missing:
+            print("\n[提示] 以下预期 OSM 图层未出现在主库中：")
+            for name in missing:
+                print(f"  - {name}")
+
+
+def run_postprocess_exports(
+    main_gpkg: Path,
+    hk_boundary_output: Path,
+    clean_output: Path,
+    drop_fids: list[int],
+    hk_boundary_name: str,
+    overwrite: bool,
+    export_hk_boundary: bool,
+    export_clean: bool,
+) -> None:
+    """执行香港行政边界提取与 clean multipolygons 导出。"""
+    fid_clause = ",".join(str(fid) for fid in drop_fids)
+
+    if export_hk_boundary:
+        hk_boundary_sql = (
+            'SELECT * FROM multipolygons '
+            f'WHERE COALESCE("name", \'\') = {sql_quote_literal(hk_boundary_name)}'
+        )
+        print("\n开始导出香港行政边界图层...")
+        export_multipolygon_subset(
+            source_gpkg=main_gpkg,
+            output_gpkg=hk_boundary_output,
+            sql=hk_boundary_sql,
+            out_layer_name="multipolygons",
+            overwrite=overwrite,
+        )
+        summarize_output_layers(hk_boundary_output, title="香港行政边界导出结果")
+
+    if export_clean:
+        clean_sql = (
+            'SELECT * FROM multipolygons '
+            'WHERE COALESCE("type", \'\') <> \'boundary\''
+        )
+        if fid_clause:
+            clean_sql += f" AND fid NOT IN ({fid_clause})"
+
+        print("\n开始导出 clean multipolygons 图层...")
+        export_multipolygon_subset(
+            source_gpkg=main_gpkg,
+            output_gpkg=clean_output,
+            sql=clean_sql,
+            out_layer_name="multipolygons",
+            overwrite=overwrite,
+        )
+        summarize_output_layers(clean_output, title="Multipolygons Clean 导出结果")
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="将 OSM .osm.pbf 高保真转换为 GeoPackage（.gpkg）"
+        description="将 OSM .osm.pbf 高保真转换为 GeoPackage（.gpkg），并导出香港边界与 clean multipolygons"
     )
     parser.add_argument(
         "--input",
@@ -326,9 +459,43 @@ def build_parser() -> argparse.ArgumentParser:
         "-o",
         default=str(DEFAULT_OUTPUT_DIR),
         help=(
-            "输出路径，可为 .gpkg 文件或目录（默认目录："
+            "主输出路径，可为 .gpkg 文件或目录（默认目录："
             f"{DEFAULT_OUTPUT_DIR}）。目录模式下自动命名为 <pbf文件名>.gpkg"
         ),
+    )
+    parser.add_argument(
+        "--hk-boundary-output",
+        "--boundary-output",
+        dest="hk_boundary_output",
+        default=None,
+        help="香港行政边界导出路径（可为 .gpkg 或目录，默认同主输出目录自动命名）",
+    )
+    parser.add_argument(
+        "--hk-boundary-name",
+        default=DEFAULT_HK_BOUNDARY_NAME,
+        help=f"香港行政边界匹配名称（默认：{DEFAULT_HK_BOUNDARY_NAME}）",
+    )
+    parser.add_argument(
+        "--multipolygons-clean-output",
+        default=None,
+        help="clean multipolygons 导出路径（可为 .gpkg 或目录，默认同主输出目录自动命名）",
+    )
+    parser.add_argument(
+        "--drop-fids",
+        default=",".join(str(fid) for fid in DEFAULT_DROP_FIDS),
+        help="从 clean multipolygons 中剔除的 GPKG fid 列表（逗号分隔）",
+    )
+    parser.add_argument(
+        "--no-hk-boundary-export",
+        "--no-boundary-export",
+        dest="no_hk_boundary_export",
+        action="store_true",
+        help="禁用香港行政边界导出",
+    )
+    parser.add_argument(
+        "--no-clean-export",
+        action="store_true",
+        help="禁用 clean multipolygons 导出",
     )
     parser.add_argument(
         "--base-osmconf",
@@ -364,7 +531,9 @@ def main() -> None:
     args = parser.parse_args()
 
     input_pbf = to_abs_path(args.input)
-    output_gpkg = infer_output_gpkg_path(input_pbf, args.output)
+    main_output_gpkg = infer_output_gpkg_path(input_pbf, args.output)
+    hk_boundary_output_gpkg = infer_hk_boundary_output_path(main_output_gpkg, args.hk_boundary_output)
+    clean_output_gpkg = infer_clean_output_path(main_output_gpkg, args.multipolygons_clean_output)
     tmp_dir = to_abs_path(args.tmp_dir)
 
     if not input_pbf.exists():
@@ -374,11 +543,14 @@ def main() -> None:
             "或通过 --input 指定其他文件。"
         )
 
-    base_conf = find_default_osmconf(args.base_osmconf)
-    custom_conf = output_gpkg.parent / "osmconf_hk_keep_all_tags.ini"
-
-    prefer_json_tags = not args.no_json_tags
+    drop_fids = parse_drop_fids(args.drop_fids)
     overwrite = not args.no_overwrite
+    prefer_json_tags = not args.no_json_tags
+    export_hk_boundary = not args.no_hk_boundary_export
+    export_clean = not args.no_clean_export
+
+    base_conf = find_default_osmconf(args.base_osmconf)
+    custom_conf = main_output_gpkg.parent / "osmconf_hk_keep_all_tags.ini"
 
     patch_osmconf(
         base_conf=base_conf,
@@ -388,7 +560,7 @@ def main() -> None:
 
     convert_pbf_to_gpkg(
         input_pbf=input_pbf,
-        output_gpkg=output_gpkg,
+        output_gpkg=main_output_gpkg,
         custom_osmconf=custom_conf,
         max_tmp_mb=args.max_tmp_mb,
         tmp_dir=tmp_dir,
@@ -396,7 +568,19 @@ def main() -> None:
         prefer_json_tags=prefer_json_tags,
     )
 
-    summarize_output_layers(output_gpkg)
+    summarize_output_layers(main_output_gpkg, title="主库图层概览", check_expected_layers=True)
+
+    run_postprocess_exports(
+        main_gpkg=main_output_gpkg,
+        hk_boundary_output=hk_boundary_output_gpkg,
+        clean_output=clean_output_gpkg,
+        drop_fids=drop_fids,
+        hk_boundary_name=args.hk_boundary_name,
+        overwrite=overwrite,
+        export_hk_boundary=export_hk_boundary,
+        export_clean=export_clean,
+    )
+
 
 if __name__ == "__main__":
     try:

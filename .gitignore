@@ -210,3 +210,6 @@ __marimo__/
 data/raw/
 data/interim/
 qgis/
+
+# Local planning notes
+plan.md
