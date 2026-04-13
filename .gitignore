@@ -207,9 +207,21 @@ marimo/_lsp/
 __marimo__/
 
 ## Project data and GIS work products
-data/raw/
-data/interim/
+data/
+processed/
+outputs/
 qgis/
+
+## Temporary files and local logs
+tmp/
+tmp_*.txt
+*.tmp
+*.temp
+
+## Local cache directories
+cache/
+.cache/
+**/__pycache__/
 
 # Local planning notes
 plan.md

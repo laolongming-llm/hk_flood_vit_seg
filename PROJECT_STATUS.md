@@ -1,100 +1,97 @@
 # 项目阶段总结（香港地物分类与洪水模拟耦合）
 
-更新时间：2026-04-07
+更新时间：2026-04-13
 
 ## 1. 当前阶段定位
-- 项目仍处于数据准备与规则迭代阶段，尚未进入 ViT 训练。
-- 当前主线已从“脚本可运行”升级到“分类质量与可学习性优化”：
-  - 区分细碎面与壳层面（避免大面误覆盖）；
-  - 调整高影响规则（parking、mangrove）；
-  - 优化栅格化性能与资源保护。
+- 项目已完成 OSM 重分类、LUM_ID 栅格化、TDOP 影像拼接与 1m 对齐，进入 ViT 数据集制作规划阶段。
+- 当前重点从“标签构建”转向“训练数据集工程化”（切片、split、防泄漏、类别不平衡控制）。
 
 ## 2. 当前脚本状态
 
 ### scripts/01_pbf_to_gpkg.py
 - 状态：稳定可用。
-- 功能：`.osm.pbf -> .gpkg` 主数据转换；保留 OSM 关键图层；按 `name='香港 Hong Kong'` 导出行政边界；导出 clean multipolygons。
+- 功能：`.osm.pbf -> .gpkg` 主数据转换；导出香港边界和 clean multipolygons。
 
 ### scripts/02_reclassify_multipolygons.py
-- 状态：已升级为 V2（规则+层级门控）。
-- 主要新增：
-  1. 分类体系从 9 类扩展到 10 类：
-     - `LUM_ID=10`：`mangrove_land`（红树林独立类）。
-  2. 叶子面优先 + 强语义非叶子面准入：
-     - 新增字段：`child_count/is_leaf_polygon/is_strong_non_leaf_candidate/is_non_leaf_allowed`。
-     - 对非准入非叶子面执行层级门控：`rule_id=NON_LEAF_EXCLUDED`，置为 `LUM_ID=255`。
-  3. 湿地细分：
-     - `wetland=mangrove` -> `LUM_ID=10`（规则 `MANGROVE_TAG`）。
-     - `wetland=saltmarsh/swamp/reedbed` -> `LUM_ID=9`（规则 `WETLAND_NATURAL_LAND`）。
-  4. parking 规则修正：
-     - `amenity=parking/parking_space/bicycle_parking/motorcycle_parking` 从交通迁入基础设施（`LUM_ID=5`）。
-  5. 鱼塘规则保留并增强：
-     - `FISHPOND_ONLY_WATER_POND` + `FISHPOND_OTHER_TAG` 并行保留。
-  6. 手工特例保留：
-     - `fid=64864` 强制归类为 `LUM_ID=8`。
-- 层级判定模式：
-  - `--hierarchy-mode bbox_exact`：候选 bbox + 精确 contains（需 `osgeo.ogr`）。
-  - `--hierarchy-mode bbox`：仅 bbox 快速模式。
-  - `--exact-parent-limit`：精确 contains 调试限流（0=全部）。
+- 状态：V2（规则 + 层级门控）稳定。
+- 核心点：10 类体系（含红树林 `LUM_ID=10`）、叶子面优先、强语义非叶子面准入、`unknown=255`。
 
 ### scripts/03_rasterize_LUMID_classes.py
-- 状态：已升级为 V2（烧录策略+性能优化）。
-- 主要新增：
-  1. 三层烧录顺序：
-     - 强语义非叶子面 -> 叶子面覆盖 -> context 可选补洞。
-  2. 大任务保护与性能参数：
-     - 新增像元总数预估与阈值拦截（超阈值默认报错）。
-     - 新增参数：`--max-pixels`、`--allow-huge-raster`、`--gdal-cache-mb`。
-  3. context_fill 改为分块处理（windowed），避免整图一次性读写。
-  4. 大图时 context 补洞后端可自动切换（`MEM` 或临时 `GTiff`）。
-  5. 输出增加过程统计（主层参与数、强语义非叶子面参与数、叶子面参与数、像元总数等）。
+- 状态：V2+（烧录策略、性能保护、样式输出）。
+- 主要能力：
+1. 三层烧录顺序：强语义非叶子面 -> 叶子面 -> 可选 context 补洞。
+2. 性能与安全参数：`--max-pixels`、`--allow-huge-raster`、`--gdal-cache-mb`。
+3. 新增样式能力：默认给输出标签写入 LUM_ID 色表，并导出同名 `.qml/.clr`（可用 `--no-lumid-style` 关闭）。
 
-## 3. 关键业务决策（已固化）
-- 行政边界提取：`name='香港 Hong Kong'`。
-- 主流程格式：`gpkg`（非 `shp`）。
-- 未分类/空白：统一编码 `255`。
-- 红树林策略（最新）：独立为 `LUM_ID=10`，用于避免训练时水体/森林混淆。
-- 细碎面优先策略：叶子面优先，允许少量强语义非叶子面参与。
+### scripts/04_prepare_imagery_and_labels.py
+- 状态：新增并已可用（2026-04-09）。
+- 功能：
+1. 按连通块拼接 TDOP（`11*` 主块 + `2SWD` 离散块），不使用 VRT。
+2. 可选补写源影像 CRS 为 `EPSG:2326`。
+3. 以 `LUM_ID 1m` 网格为基准，导出 1m 对齐影像与 1m 对齐标签。
+4. 输出 QC：配准报告和类别像元统计。
+5. 对标签输出写入色表并导出 `.qml/.clr`。
 
-## 4. 最近一次验证结论（可复查）
-- `02`（`--hierarchy-mode bbox`）已跑通，输出统计示例：
-  - 总要素：`186,814`
-  - 叶子面：`158,744`
-  - 非叶子面：`28,070`
-  - 强语义非叶子面准入：`4,915`
-  - 层级门控排除：`12,471`
-  - unknown（255）：`36,719`
-- 红树林验证：
-  - `wetland=mangrove` 已全部命中 `LUM_ID=10`（`MANGROVE_TAG`）。
-- 栅格验证：
-  - 主输出 `hk_landuse_LUMID.tif` 包含值 `10`（红树林），像元计数已出现。
+### scripts/lumid_style.py
+- 状态：新增并可复用。
+- 功能：统一管理 LUM_ID 颜色映射，支持写入栅格色表、导出 QGIS 样式和 CLR 文件。
+
+## 3. 数据与质检现状（截至 2026-04-09）
+
+当前关键产物：
+1. `data/interim/imagery_1m_aligned/tdop_11block_1m_aligned.tif`
+2. `data/interim/imagery_1m_aligned/tdop_2swd_1m_aligned.tif`
+3. `data/interim/labels_1m_aligned/lumid_11block_1m_aligned.tif`
+4. `data/interim/labels_1m_aligned/lumid_2swd_1m_aligned.tif`
+5. `data/interim/qc/imagery_label_alignment_report.csv`
+6. `data/interim/qc/class_pixel_stats.csv`
+
+配准结果（alignment report）：
+1. `11block` 和 `2swd` 均 `overall_pass=1`。
+2. `crs/resolution/transform/shape/bounds` 全部匹配。
+
+类别统计（class stats，汇总）：
+1. 总像元：`146,280,002`
+2. 有效像元（1~10）：`92,586,844`
+3. `255` 像元：`53,693,158`（约 `36.71%`）
+4. 主导类别：`9`（约 `54.92%`）和 `8`（约 `24.39%`）。
+5. `2swd` 生态特征显著：鱼塘/红树林/水体占比高；`11block` 以城市+山地为主。
+
+## 4. 已固化关键决策（最新）
+1. 标签编码：`1~10` 有效类，`255` 为 unknown/nodata。
+2. 红树林保留独立类别：`LUM_ID=10`。
+3. ViT 数据集 split 采用：`train / val / test_in_domain / test_eco_holdout`。
+4. `2swd` 切分策略：纵向 `30%/70%`，左侧用于 `val_eco + test_eco_holdout`，右侧用于 `train_eco_support`。
+5. 空间防泄漏：split 边界两侧设置缓冲带（规划值 `512m`），缓冲带内 patch 丢弃。
+6. 本阶段不做纯跨域对照实验，优先构建实用训练数据集。
+7. 当前 AOI（`11block + 2swd`）`v1` 验收闸门调整为：`train>=2k`、`val>=200`、`test_in_domain>=200`、`test_eco_holdout>=30`。
+8. 旧闸门 `train>=8k`、`val>=1k` 调整为全港扩展阶段参考目标，不作为当前 AOI 阶段硬性要求。
 
 ## 5. 环境与已知注意事项
-- `01/03` 运行依赖 `osgeo`，建议固定 GIS conda 环境。
-- 在普通 Python 环境下，`03` 会报缺少 `osgeo`。
-- `02` 的精确 contains（`bbox_exact`）若无 `osgeo.ogr` 会自动回退到 `bbox`。
-- `conda run` 在当前机器上偶发编码噪音（GBK/Unicode 输出），不等于脚本必然失败；以目标文件是否生成和脚本日志为准。
+1. `01/03/04` 运行依赖 `osgeo`（GDAL/OGR），建议固定 GIS conda 环境。
+2. 普通 Python 环境常见错误：`ModuleNotFoundError: osgeo`。
+3. 终端编码偶发噪音不代表脚本失败，以目标文件与 QC 结果为准。
 
 ## 6. 下次开工前检查清单
-- 数据输入存在性：
-  - `data/raw/osm/hong-kong-260330.osm.pbf`
-  - `data/interim/gpkg/hong-kong-260330_multipolygons_clean.gpkg`
-- 环境：
-  - `python` 可用；
-  - GIS 环境内 `osgeo` 可用。
-- 推荐执行顺序：
-  1. `python scripts/02_reclassify_multipolygons.py --hierarchy-mode bbox_exact`
-  2. `python scripts/03_rasterize_LUMID_classes.py --pixel-size <分辨率>`
-- 若需要超细分辨率（如 `0.2m`）：
-  - 优先分区处理或提高像元大小；
-  - 必要时显式配置 `--max-pixels` / `--allow-huge-raster` / `--gdal-cache-mb`。
+1. 输入数据存在：
+1. `data/raw/osm/hong-kong-260330.osm.pbf`
+2. `data/raw/imagery/TDOP_TIFF_*/**/*.tif`
+2. 中间数据存在：
+1. `data/interim/cleaned_vectors/hk_multipolygons_hydro_reclass.gpkg`
+2. `data/interim/masks_full/hk_landuse_LUMID.tif`（或准备重跑 03）
+3. 环境：
+1. GIS 环境 `python` 可用；
+2. `import osgeo` 成功。
 
-## 7. 仍需推进的工作
-- 用 GIS 环境完整跑一轮 `bbox_exact` 全量（非调试限流），评估与 `bbox` 差异。
-- 针对 `NON_LEAF_EXCLUDED` 与 `unknown` 做重点区域复核，必要时补充白名单。
-- 继续完善 10 类质量评估（面积占比、空间一致性、类别混淆风险）。
-- 构建训练样本切片与 train/val/test 划分，进入模型训练前准备。
+## 7. 下一阶段（未编码）
+1. 按 `analysis_plans/2026-04-09_vit_train_val_test_dataset_planning.md` 实现切片与 split 脚本。
+2. 先执行切片 `dry-run`（不落盘），输出并核对各 split 数量与类别统计，必要时按计划文档进行 stride 调整。
+3. 输出 `tiles_manifest.csv`、`split_summary.csv`、`eco_split_geometry.csv`、`eco_split_class_stats.csv`。
+4. 完成 `v1` 数据集封版后进入 ViT 训练。
 
 ## 8. 相关文档
-- `plan.md`：V2 策略与实施细化（含强语义非叶子面参与方案）。
-- `GPKG_MULTIPOLYGONS_FIELDS.md`：`multipolygons` 字段字典与解释。
+1. `analysis_plans/2026-04-08_imagery_mosaic_and_lumid_registration_plan.md`
+2. `analysis_plans/2026-04-09_vit_train_val_test_dataset_planning.md`
+3. `analysis_plans/2026-04-08_HK_TDOP_AOI_selection_strategy.md`
+4. `plan.md`
+5. `GPKG_MULTIPOLYGONS_FIELDS.md`

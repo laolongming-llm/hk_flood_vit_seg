@@ -1,0 +1,13 @@
+# value R G B label
+1 228 26 28 building_land(建筑用地)
+2 255 127 0 business_land(商业用地)
+3 152 78 163 industrial_land(工业用地)
+4 255 217 47 transport_land(交通用地)
+5 55 126 184 infrastructure_land(基础设施/公共服务用地)
+6 166 216 84 agricultural_land(农业用地)
+7 77 187 213 fish_pond_land(鱼塘用地)
+8 31 120 180 water_body(水体)
+9 51 160 44 mountainous_land(山地/自然地)
+10 140 109 49 mangrove_land(红树林)
+255 255 255 255 unknown(未分类/空白)
+

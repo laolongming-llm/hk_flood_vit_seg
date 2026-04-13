@@ -40,6 +40,12 @@ try:
 except Exception:  # pragma: no cover
     np = None
 
+try:
+    from lumid_style import apply_lumid_style_to_raster, write_style_sidecars_for_raster
+except Exception:
+    apply_lumid_style_to_raster = None
+    write_style_sidecars_for_raster = None
+
 PROJECT_ROOT: Final[Path] = Path(__file__).resolve().parents[1]
 
 # ===== 可配置项（路径）=====
@@ -298,6 +304,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--tmp-dir", default=str(DEFAULT_TMP_DIR), help="临时目录")
     parser.add_argument("--keep-temp", action="store_true", help="保留重投影临时文件")
+    parser.add_argument("--no-lumid-style", action="store_true", help="不写入 LUM_ID 色表")
+    parser.add_argument("--no-style-sidecar", action="store_true", help="不导出同名 qml/clr 样式文件")
     parser.add_argument("--no-overwrite", action="store_true", help="输出存在时不覆盖")
     return parser
 
@@ -530,7 +538,23 @@ def main() -> None:
     if temp_gpkg is not None and not args.keep_temp:
         cleanup_gpkg(temp_gpkg)
 
+    style_qml_path = None
+    style_clr_path = None
+    if not args.no_lumid_style:
+        if apply_lumid_style_to_raster is None:
+            raise RuntimeError("无法导入 lumid_style，无法写入 LUM_ID 色表。")
+        apply_lumid_style_to_raster(output_tif, label_nodata=args.nodata)
+        if not args.no_style_sidecar:
+            if write_style_sidecars_for_raster is None:
+                raise RuntimeError("无法导入 lumid_style，无法导出 qml/clr 样式文件。")
+            style_qml_path, style_clr_path = write_style_sidecars_for_raster(output_tif)
+
     print(f"输出栅格: {output_tif}")
+    if not args.no_lumid_style:
+        print("LUM_ID 色表: embedded")
+        if style_qml_path is not None and style_clr_path is not None:
+            print(f"样式文件(QGIS): {style_qml_path}")
+            print(f"样式文件(CLR): {style_clr_path}")
     if main_count >= 0:
         print(f"主层参与栅格化要素数: {main_count}")
     if hierarchy_fields_ready:

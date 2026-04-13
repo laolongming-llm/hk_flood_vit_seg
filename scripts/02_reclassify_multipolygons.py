@@ -14,11 +14,11 @@
 说明：
 - LUM_ID: 1~10 为有效地物分类；255 为未分类/空白。
 - LUM_ID 对应地物类型：
-  - 1: building_land（建筑用地）
+  - 1: building_land（建筑用地） *
   - 2: business_land（商业用地）
-  - 3: industrial_land（工业用地）
+  - 3: industrial_land（工业用地） *
   - 4: transport_land（交通用地）
-  - 5: infrastructure_land（基础设施/公共服务用地）
+  - 5: infrastructure_land（基础设施/公共服务用地） *
   - 6: agricultural_land（农业用地）
   - 7: fish_pond_land（鱼塘用地）
   - 8: water_body（水体）
