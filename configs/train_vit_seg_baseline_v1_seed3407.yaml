@@ -1,0 +1,11 @@
+# baseline 训练的 seed 专用覆盖配置（seed=3407）。
+# 用法建议：先加载主配置，再合并本覆盖配置。
+
+base_config: "configs/train_vit_seg_baseline_v1.yaml"  # 主模板路径，继承通用配置。
+
+experiment:
+  run_name: "vit_seg_baseline_v1_seed3407"  # 本 seed 试验的唯一运行名。
+  seed: 3407  # 本次运行使用的随机种子。
+
+output:
+  run_subdir: "vit_seg_baseline_v1_seed3407"  # 在 outputs/train_runs/ 下的子目录名。
