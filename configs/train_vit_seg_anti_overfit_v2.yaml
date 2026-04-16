@@ -1,0 +1,45 @@
+# 防过拟合第二轮配置（基于 baseline 继承）
+# 设计目标：
+# 1) 保留 v1 中“抑制过拟合”的方向；
+# 2) 适度降低正则与增强强度，缓解早期过拟合抑制过强导致的欠拟合/波动；
+# 3) 将 max_epochs 从 80 收缩到 40，缩短长尾无效训练时间。
+base_config: "configs/train_vit_seg_baseline_v1.yaml"
+
+experiment:
+  name: "vit_seg_anti_overfit_v2"
+  run_name: "vit_seg_anti_overfit_v2_seed42"
+
+data:
+  augmentation:
+    enabled: true
+    # 空间增强保持中等强度
+    hflip_prob: 0.5
+    vflip_prob: 0.5
+    rot90_prob: 0.4
+    # 光谱增强从 v1 的较强设置回调
+    color_jitter_prob: 0.35
+    brightness_delta: 0.08
+    contrast_delta: 0.08
+    channel_scale_prob: 0.2
+    channel_scale_delta: 0.05
+    # 噪声增强下调，避免扰动过强破坏细粒度边界学习
+    gaussian_noise_prob: 0.1
+    gaussian_noise_std: 0.01
+
+model:
+  # v1=0.2，回调至 0.15，减少欠拟合风险
+  dropout: 0.15
+
+optimizer:
+  # v1=0.03，回调至 0.02
+  weight_decay: 0.02
+
+loss:
+  # v1=0.05，回调至 0.02
+  label_smoothing: 0.02
+
+train:
+  # 继续使用较紧凑早停策略
+  early_stopping_patience: 8
+  # 由 baseline/v1 的 80 调整为 40，配合早停节省训练时长
+  max_epochs: 40

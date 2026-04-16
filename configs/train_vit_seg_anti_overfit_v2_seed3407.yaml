@@ -1,0 +1,9 @@
+# 防过拟合 v2 实验 seed=3407
+base_config: "configs/train_vit_seg_anti_overfit_v2.yaml"
+
+experiment:
+  run_name: "vit_seg_anti_overfit_v2_seed3407"
+  seed: 3407
+
+output:
+  run_subdir: "vit_seg_anti_overfit_v2_seed3407"
