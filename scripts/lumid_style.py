@@ -15,8 +15,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Final
 
-from osgeo import gdal
-
 # value, english_name, chinese_name, hex, (r,g,b)
 LUM_ID_STYLE: Final[list[tuple[int, str, str, str, tuple[int, int, int]]]] = [
     (1, "building_land", "建筑用地", "#E41A1C", (228, 26, 28)),
@@ -44,6 +42,13 @@ def apply_lumid_style_to_raster(
     """
     将 LUM_ID 色表写入栅格，便于 QGIS/ENVI 直接按类别上色显示。
     """
+    try:
+        from osgeo import gdal
+    except Exception as exc:
+        raise RuntimeError(
+            "apply_lumid_style_to_raster 需要 osgeo.gdal；当前环境未安装 GDAL。"
+        ) from exc
+
     ds = gdal.Open(str(raster_path), gdal.GA_Update)
     if ds is None:
         raise RuntimeError(f"无法打开栅格（写入色表失败）：{raster_path}")
@@ -146,4 +151,3 @@ def write_style_sidecars_for_raster(
     write_qgis_qml(qml_path)
     write_clr(clr_path)
     return qml_path, clr_path
-

@@ -37,11 +37,11 @@ freeze:
     - "data/processed/vit_dataset/v1/manifests_dryrun_tuned_b256/eco_split_geometry.csv"  # 生态切分几何参数。
 
 loader:
-  batch_size: 8  # 训练时每卡 batch size，可按显存调整。
-  eval_batch_size: 8  # 验证/测试推理 batch size。
-  num_workers: 4  # dataloader 工作进程数。
+  batch_size: 2  # 训练时每卡 batch size，可按显存调整。
+  eval_batch_size: 2  # 验证/测试推理 batch size。
+  num_workers: 2  # dataloader 工作进程数。
   pin_memory: true  # 锁页内存，加速主机到设备传输。
-  persistent_workers: true  # 多轮训练时复用 worker，减少启动开销。
+  persistent_workers: false  # 多轮训练时复用 worker，减少启动开销。
   prefetch_factor: 2  # 每个 worker 预取 batch 数。
   drop_last_train: false  # 是否丢弃最后一个不足 batch 的训练批次。
 
@@ -92,7 +92,7 @@ evaluation:
   eco_holdout_missing_class_policy: "mark_na_and_average_present_classes"  # 生态留出集中缺类时的处理策略。
 
 output:
-  root_dir: "outputs/train_runs"  # 所有训练产物的根目录。
+  root_dir: "outputs/train_runs/formal"  # formal 训练产物根目录（与 smoke 结果隔离）。
   save_best_by: "val_miou"  # 选取最佳 checkpoint 的指标。
   save_last: true  # 是否保存最后一轮 checkpoint。
   save_confusion_matrix: true  # 是否保存混淆矩阵 CSV。

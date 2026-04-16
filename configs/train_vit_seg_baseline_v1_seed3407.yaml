@@ -8,4 +8,4 @@ experiment:
   seed: 3407  # 本次运行使用的随机种子。
 
 output:
-  run_subdir: "vit_seg_baseline_v1_seed3407"  # 在 outputs/train_runs/ 下的子目录名。
+  run_subdir: "vit_seg_baseline_v1_seed3407"  # 在 outputs/train_runs/formal/ 下的子目录名。
