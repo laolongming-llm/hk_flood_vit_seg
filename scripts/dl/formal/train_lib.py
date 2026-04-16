@@ -398,6 +398,8 @@ class SegmentationTileDataset(Dataset):
         label_suffix: str,
         num_classes: int,
         ignore_index: int,
+        enable_augment: bool = False,
+        augment_cfg: Optional[Dict[str, Any]] = None,
     ):
         self.df = manifest_df.reset_index(drop=True)
         self.dataset_root = dataset_root
@@ -407,9 +409,56 @@ class SegmentationTileDataset(Dataset):
         self.label_suffix = label_suffix
         self.num_classes = num_classes
         self.ignore_index = ignore_index
+        self.enable_augment = bool(enable_augment)
+        self.augment_cfg = augment_cfg or {}
 
     def __len__(self) -> int:
         return len(self.df)
+
+    def _apply_train_augment(self, image: torch.Tensor, label: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        """训练期增强（仅 train 启用）。
+
+        说明：
+        1. 空间变换同步作用于影像与标签，保持像元一一对应。
+        2. 光谱/噪声增强仅作用于影像，不改变标签语义。
+        3. 最终将影像裁剪到 [0, 1]，保持输入范围稳定。
+        """
+        cfg = self.augment_cfg
+
+        if torch.rand(1).item() < float(cfg.get("hflip_prob", 0.5)):
+            image = torch.flip(image, dims=[2])
+            label = torch.flip(label, dims=[1])
+
+        if torch.rand(1).item() < float(cfg.get("vflip_prob", 0.5)):
+            image = torch.flip(image, dims=[1])
+            label = torch.flip(label, dims=[0])
+
+        if torch.rand(1).item() < float(cfg.get("rot90_prob", 0.5)):
+            k = int(torch.randint(low=1, high=4, size=(1,)).item())
+            image = torch.rot90(image, k=k, dims=[1, 2])
+            label = torch.rot90(label, k=k, dims=[0, 1])
+
+        if torch.rand(1).item() < float(cfg.get("color_jitter_prob", 0.5)):
+            brightness_delta = float(cfg.get("brightness_delta", 0.10))
+            contrast_delta = float(cfg.get("contrast_delta", 0.10))
+            brightness_factor = 1.0 + (2.0 * torch.rand(1).item() - 1.0) * brightness_delta
+            contrast_factor = 1.0 + (2.0 * torch.rand(1).item() - 1.0) * contrast_delta
+
+            channel_mean = image.mean(dim=(1, 2), keepdim=True)
+            image = (image - channel_mean) * contrast_factor + channel_mean
+            image = image * brightness_factor
+
+        if torch.rand(1).item() < float(cfg.get("channel_scale_prob", 0.25)):
+            channel_scale_delta = float(cfg.get("channel_scale_delta", 0.08))
+            scale = 1.0 + (torch.rand((image.shape[0], 1, 1)) * 2.0 - 1.0) * channel_scale_delta
+            image = image * scale
+
+        if torch.rand(1).item() < float(cfg.get("gaussian_noise_prob", 0.20)):
+            noise_std = float(cfg.get("gaussian_noise_std", 0.02))
+            image = image + torch.randn_like(image) * noise_std
+
+        image = torch.clamp(image, 0.0, 1.0)
+        return image, label
 
     def __getitem__(self, idx: int) -> Dict[str, Any]:
         """读取单个 tile 样本并完成标签映射。"""
@@ -438,9 +487,14 @@ class SegmentationTileDataset(Dataset):
         valid_mask = (label >= 1) & (label <= self.num_classes)
         mapped_label[valid_mask] = label[valid_mask] - 1
 
+        image_tensor = torch.from_numpy(image)
+        label_tensor = torch.from_numpy(mapped_label)
+        if self.enable_augment:
+            image_tensor, label_tensor = self._apply_train_augment(image=image_tensor, label=label_tensor)
+
         return {
-            "image": torch.from_numpy(image),
-            "label": torch.from_numpy(mapped_label),
+            "image": image_tensor,
+            "label": label_tensor,
             "tile_id": tile_id,
             "split": split_name,
         }
@@ -565,4 +619,3 @@ def load_checkpoint(checkpoint_path: Path, device: torch.device) -> Dict[str, An
     if not isinstance(payload, dict):
         raise ValueError(f"Invalid checkpoint payload type: {type(payload)}")
     return payload
-

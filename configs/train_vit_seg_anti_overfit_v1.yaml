@@ -1,0 +1,41 @@
+# 防过拟合版本配置（基于 baseline 继承）
+# 目标：在不改动任务定义与评估口径的前提下，提升泛化稳定性。
+base_config: "configs/train_vit_seg_baseline_v1.yaml"
+
+experiment:
+  name: "vit_seg_anti_overfit_v1"
+  run_name: "vit_seg_anti_overfit_v1_seed42"
+
+data:
+  augmentation:
+    enabled: true
+    # 空间增强：遥感场景通常方向不固定，翻转/90度旋转可有效扩充样本多样性。
+    hflip_prob: 0.5
+    vflip_prob: 0.5
+    rot90_prob: 0.75
+    # 光谱增强：轻量亮度/对比度抖动，降低对采样时段与成像条件的过拟合。
+    color_jitter_prob: 0.6
+    brightness_delta: 0.12
+    contrast_delta: 0.12
+    # 通道缩放：模拟波段响应波动，提升鲁棒性。
+    channel_scale_prob: 0.3
+    channel_scale_delta: 0.08
+    # 噪声增强：抑制模型对纹理噪声的过拟合。
+    gaussian_noise_prob: 0.2
+    gaussian_noise_std: 0.02
+
+model:
+  # 提高 dropout，缓解高容量 backbone 在小批量上的记忆化倾向。
+  dropout: 0.2
+
+optimizer:
+  # 略增权重衰减，抑制参数过度放大。
+  weight_decay: 0.03
+
+loss:
+  # 标签平滑用于缓解过度自信预测，提高验证集泛化稳定性。
+  label_smoothing: 0.05
+
+train:
+  # 当前已观察到较早出现过拟合，收紧早停耐心值。
+  early_stopping_patience: 8

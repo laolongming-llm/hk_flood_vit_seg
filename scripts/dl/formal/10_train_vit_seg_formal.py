@@ -247,6 +247,8 @@ def main() -> None:
         label_suffix=data_cfg["label_suffix"],
         num_classes=num_classes,
         ignore_index=ignore_index,
+        enable_augment=bool(data_cfg.get("augmentation", {}).get("enabled", False)),
+        augment_cfg=dict(data_cfg.get("augmentation", {})),
     )
     val_dataset = SegmentationTileDataset(
         manifest_df=val_df,
@@ -257,6 +259,8 @@ def main() -> None:
         label_suffix=data_cfg["label_suffix"],
         num_classes=num_classes,
         ignore_index=ignore_index,
+        enable_augment=False,
+        augment_cfg=None,
     )
     train_loader = build_dataloader(
         dataset=train_dataset,
@@ -276,9 +280,14 @@ def main() -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     amp_enabled = bool(train_cfg.get("amp", True)) and device.type == "cuda"
     logger.info("Device=%s | AMP=%s | backbone=%s", device, amp_enabled, model_cfg.get("backbone"))
+    logger.info("Train augmentation enabled: %s", bool(data_cfg.get("augmentation", {}).get("enabled", False)))
 
     model = build_model_from_config(cfg).to(device)
-    criterion = nn.CrossEntropyLoss(ignore_index=int(loss_cfg.get("ignore_index", ignore_index)))
+    label_smoothing = float(loss_cfg.get("label_smoothing", 0.0))
+    criterion = nn.CrossEntropyLoss(
+        ignore_index=int(loss_cfg.get("ignore_index", ignore_index)),
+        label_smoothing=max(0.0, label_smoothing),
+    )
     optimizer = torch.optim.AdamW(
         model.parameters(),
         lr=float(optimizer_cfg.get("lr", 1e-4)),
