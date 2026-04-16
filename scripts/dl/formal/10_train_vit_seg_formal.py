@@ -12,6 +12,7 @@ import argparse
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
@@ -102,6 +103,96 @@ def build_poly_scheduler(
         return max(min_lr / base_lr, lr / base_lr)
 
     return torch.optim.lr_scheduler.LambdaLR(optimizer=optimizer, lr_lambda=lr_lambda)
+
+
+def resolve_class_weights(
+    loss_cfg: Dict[str, Any],
+    train_df: pd.DataFrame,
+    num_classes: int,
+    device: torch.device,
+    logger: Any,
+) -> Optional[torch.Tensor]:
+    """解析并构建类别权重张量。
+
+    支持三种模式：
+    1. `null`：不启用类别权重。
+    2. `list[float]`：手动指定每个类别的权重（长度需等于 num_classes）。
+    3. `str` 自动模式：
+       - `auto_inverse_freq` / `auto_inv_freq`
+       - `auto_sqrt_inverse_freq` / `auto_inv_sqrt_freq`
+
+    自动模式基于训练集 manifest 中 `class_1..class_N` 像元计数计算，
+    并做“均值归一化 + floor/cap 截断”，避免极端稀有类导致权重爆炸。
+    """
+    class_weights_cfg = loss_cfg.get("class_weights", None)
+    if class_weights_cfg is None:
+        logger.info("Class weights: disabled (equal weights).")
+        return None
+
+    if isinstance(class_weights_cfg, list):
+        if len(class_weights_cfg) != num_classes:
+            raise ValueError(
+                f"loss.class_weights length mismatch: got {len(class_weights_cfg)}, expected {num_classes}."
+            )
+        weights = np.asarray([float(x) for x in class_weights_cfg], dtype=np.float32)
+        if not np.all(np.isfinite(weights)):
+            raise ValueError("loss.class_weights contains NaN/Inf.")
+        if np.any(weights <= 0):
+            raise ValueError("loss.class_weights must be > 0 for all classes.")
+        logger.info("Class weights: manual list enabled.")
+        return torch.tensor(weights, dtype=torch.float32, device=device)
+
+    if isinstance(class_weights_cfg, str):
+        mode = class_weights_cfg.strip().lower()
+        valid_modes = {
+            "auto_inverse_freq",
+            "auto_inv_freq",
+            "auto_sqrt_inverse_freq",
+            "auto_inv_sqrt_freq",
+        }
+        if mode not in valid_modes:
+            raise ValueError(
+                "Unsupported loss.class_weights mode. "
+                f"Got '{class_weights_cfg}', expected one of {sorted(valid_modes)}."
+            )
+
+        class_cols = [f"class_{i}" for i in range(1, num_classes + 1)]
+        missing_cols = [c for c in class_cols if c not in train_df.columns]
+        if missing_cols:
+            raise ValueError(
+                f"Manifest missing class columns required for auto class weights: {missing_cols}"
+            )
+
+        class_pixels = train_df[class_cols].sum(axis=0).astype(np.float64).to_numpy()
+        class_pixels = np.clip(class_pixels, a_min=1.0, a_max=None)
+        if mode in {"auto_inverse_freq", "auto_inv_freq"}:
+            weights = 1.0 / class_pixels
+        else:
+            weights = 1.0 / np.sqrt(class_pixels)
+
+        # 先归一化到均值 1，再做上下限截断，最后再次归一化，保证尺度稳定。
+        weights = weights / max(float(weights.mean()), 1e-12)
+        weight_floor = float(loss_cfg.get("class_weights_floor", 0.2))
+        weight_cap = float(loss_cfg.get("class_weights_cap", 5.0))
+        if weight_floor <= 0 or weight_cap <= 0 or weight_floor > weight_cap:
+            raise ValueError(
+                f"Invalid class weight bounds: floor={weight_floor}, cap={weight_cap}."
+            )
+        weights = np.clip(weights, a_min=weight_floor, a_max=weight_cap)
+        weights = weights / max(float(weights.mean()), 1e-12)
+
+        logger.info(
+            "Class weights: auto mode=%s | floor=%.3f cap=%.3f | weights=%s",
+            mode,
+            weight_floor,
+            weight_cap,
+            [round(float(x), 4) for x in weights.tolist()],
+        )
+        return torch.tensor(weights.astype(np.float32), dtype=torch.float32, device=device)
+
+    raise ValueError(
+        "loss.class_weights must be null, list[float], or supported auto mode string."
+    )
 
 
 @torch.no_grad()
@@ -284,9 +375,17 @@ def main() -> None:
 
     model = build_model_from_config(cfg).to(device)
     label_smoothing = float(loss_cfg.get("label_smoothing", 0.0))
+    class_weights_tensor = resolve_class_weights(
+        loss_cfg=loss_cfg,
+        train_df=train_df,
+        num_classes=num_classes,
+        device=device,
+        logger=logger,
+    )
     criterion = nn.CrossEntropyLoss(
         ignore_index=int(loss_cfg.get("ignore_index", ignore_index)),
         label_smoothing=max(0.0, label_smoothing),
+        weight=class_weights_tensor,
     )
     optimizer = torch.optim.AdamW(
         model.parameters(),

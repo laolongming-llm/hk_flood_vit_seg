@@ -81,7 +81,14 @@ scheduler:
 loss:
   type: "cross_entropy"  # baseline 分割损失函数。
   ignore_index: 255  # 计算损失时忽略的标签值。
-  class_weights: null  # 可选类别权重；null 表示等权。
+  # 可选类别权重：
+  # 1) null：等权。
+  # 2) [w1..wN]：手动指定各类别权重（长度=类别数）。
+  # 3) 自动模式字符串：auto_inverse_freq / auto_sqrt_inverse_freq。
+  class_weights: null
+  # 自动权重模式下的截断上下限（防止极端稀有类权重过大）。
+  class_weights_floor: 0.2
+  class_weights_cap: 5.0
   label_smoothing: 0.0  # 标签平滑系数。
 
 evaluation:

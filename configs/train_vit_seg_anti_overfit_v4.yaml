@@ -1,0 +1,21 @@
+# 防过拟合第四轮配置（基于 v3 继承）
+# 目标：在 v3 稳态策略基础上，进一步缓解类别极不平衡导致的 mIoU 波动。
+#
+# 核心新增：
+# 1) 启用自动类别权重（按训练集类别像元数的“平方根逆频率”计算）；
+# 2) 配合权重上下限截断，避免稀有类权重过大造成训练不稳定。
+base_config: "configs/train_vit_seg_anti_overfit_v3.yaml"
+
+experiment:
+  name: "vit_seg_anti_overfit_v4"
+  run_name: "vit_seg_anti_overfit_v4_seed42"
+
+loss:
+  # 训练脚本支持：
+  # - auto_inverse_freq
+  # - auto_sqrt_inverse_freq
+  # 建议先用 sqrt 版本，稳定性通常更好。
+  class_weights: "auto_sqrt_inverse_freq"
+  class_weights_floor: 0.3
+  class_weights_cap: 3.0
+

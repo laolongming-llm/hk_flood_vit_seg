@@ -1,0 +1,9 @@
+# 防过拟合 v3 实验 seed=2026
+base_config: "configs/train_vit_seg_anti_overfit_v3.yaml"
+
+experiment:
+  run_name: "vit_seg_anti_overfit_v3_seed2026"
+  seed: 2026
+
+output:
+  run_subdir: "vit_seg_anti_overfit_v3_seed2026"
