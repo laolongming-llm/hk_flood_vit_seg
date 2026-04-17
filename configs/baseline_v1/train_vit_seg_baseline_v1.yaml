@@ -1,0 +1,116 @@
+# 数据集 v1 的 ViT 语义分割 baseline 训练配置。
+# 这是主模板；seed 专用配置只覆盖少数字段。
+
+experiment:
+  name: "vit_seg_baseline_v1"  # 实验族名称，用于归类同一批实验。
+  run_name: "vit_seg_baseline_v1_seed42"  # 默认运行名，可被 seed 覆盖配置替换。
+  seed: 42  # 全局随机种子，影响数据顺序和参数初始化。
+  deterministic: true  # 尽量启用确定性计算，提升复现性。
+  cudnn_benchmark: false  # 关闭 cuDNN 自动调优，避免内核选择带来非确定性。
+  resume_from: null  # 断点恢复权重路径；null 表示从头训练。
+
+data:
+  dataset_root: "data/processed/vit_dataset/v1"  # 冻结后的 v1 数据集根目录。
+  manifest_path: "data/processed/vit_dataset/v1/manifests/tiles_manifest.csv"  # tile 级主清单路径。
+  splits:  # 训练/验证/测试使用的物理子目录名。
+    train: "train"  # 训练集目录名（位于 images/labels 下）。
+    val: "val"  # 验证集目录名（用于早停和选模）。
+    test_in_domain: "test_in_domain"  # 域内测试集目录名。
+    test_eco_holdout: "test_eco_holdout"  # 生态留出测试集目录名。
+  image_dirname: "images"  # 影像目录名。
+  label_dirname: "labels"  # 标签目录名。
+  image_suffix: ".tif"  # 影像 patch 文件后缀。
+  label_suffix: ".tif"  # 标签 patch 文件后缀。
+  patch_size: 512  # patch 空间尺寸，需与导出数据一致。
+  in_channels: 3  # 模型输入通道数。
+  num_classes: 10  # 有效语义类别数（1~10）。
+  ignore_index: 255  # loss 和指标计算时忽略的标签值。
+
+freeze:
+  dataset_fingerprint_path: "outputs/evaluation_reports/2026-04-14_dataset_freeze_v1/dataset_fingerprint.csv"  # 数据冻结指纹文件路径。
+  verify_fingerprint_on_start: true  # 训练启动前校验哈希与统计是否匹配。
+  required_fingerprint_targets:  # 指纹中必须存在的关键记录。
+    - "data/processed/vit_dataset/v1/manifests/tiles_manifest.csv"  # 核心 tile 清单。
+    - "data/processed/vit_dataset/v1/manifests/export_report.csv"  # 导出执行报告。
+    - "data/processed/vit_dataset/v1/manifests_dryrun_tuned_b256/split_summary.csv"  # split 级质量汇总。
+    - "data/processed/vit_dataset/v1/manifests_dryrun_tuned_b256/eco_split_class_stats.csv"  # 生态子集类别统计。
+    - "data/processed/vit_dataset/v1/manifests_dryrun_tuned_b256/eco_split_geometry.csv"  # 生态切分几何参数。
+
+loader:
+  batch_size: 2  # 训练时每卡 batch size，可按显存调整。
+  eval_batch_size: 2  # 验证/测试推理 batch size。
+  num_workers: 2  # dataloader 工作进程数。
+  pin_memory: true  # 锁页内存，加速主机到设备传输。
+  persistent_workers: false  # 多轮训练时复用 worker，减少启动开销。
+  prefetch_factor: 2  # 每个 worker 预取 batch 数。
+  drop_last_train: false  # 是否丢弃最后一个不足 batch 的训练批次。
+
+model:
+  architecture: "vit_seg_baseline"  # 训练代码中用于实例化模型的名称。
+  backbone: "vit_base_patch16_224"  # ViT 主干网络变体。
+  decoder_head: "simple_fpn_head"  # 分割解码头名称。
+  pretrained: true  # 是否加载预训练主干权重。
+  pretrained_source: "imagenet21k"  # 预训练权重来源说明。
+  out_classes: 10  # 输出 logits 通道数（类别数）。
+  drop_path_rate: 0.1  # 主干随机深度（stochastic depth）概率。
+  dropout: 0.1  # 解码头 dropout 概率。
+
+train:
+  max_epochs: 80  # 最大训练轮次。
+  amp: true  # 是否启用混合精度以节省显存并提速。
+  grad_accum_steps: 1  # 梯度累积步数。
+  grad_clip_norm: 1.0  # 全局梯度裁剪阈值。
+  log_every_n_steps: 20  # 训练日志打印间隔（step）。
+  val_every_n_epochs: 1  # 验证执行间隔（epoch）。
+  early_stopping_patience: 12  # 指标连续 N 次无提升则早停。
+  early_stopping_min_delta: 0.0  # 视为“有效提升”所需的最小增量（针对 val_miou）。
+  save_top_k: 1  # 保留最佳 checkpoint 数量。
+
+optimizer:
+  type: "AdamW"  # 优化器类型。
+  lr: 0.0001  # 基础学习率。
+  weight_decay: 0.01  # AdamW 的权重衰减系数。
+  betas: [0.9, 0.999]  # AdamW beta 系数。
+  eps: 0.00000001  # AdamW 数值稳定项。
+
+scheduler:
+  type: "poly"  # 学习率调度策略。
+  power: 0.9  # 多项式衰减指数。
+  min_lr: 0.000001  # 学习率下限。
+  warmup_epochs: 3  # 预热轮次。
+
+loss:
+  type: "cross_entropy"  # baseline 分割损失函数。
+  ignore_index: 255  # 计算损失时忽略的标签值。
+  # 可选类别权重：
+  # 1) null：等权。
+  # 2) [w1..wN]：手动指定各类别权重（长度=类别数）。
+  # 3) 自动模式字符串：auto_inverse_freq / auto_sqrt_inverse_freq。
+  class_weights: null
+  # 自动权重模式下的截断上下限（防止极端稀有类权重过大）。
+  class_weights_floor: 0.2
+  class_weights_cap: 5.0
+  # 是否在 clip 后再次归一化（默认 false，保证 cap/floor 严格生效）。
+  class_weights_renorm_after_clip: false
+  label_smoothing: 0.0  # 标签平滑系数。
+
+evaluation:
+  splits_to_eval: ["val", "test_in_domain", "test_eco_holdout"]  # 训练后要评估的 split 列表。
+  metrics: ["miou", "mf1", "overall_accuracy", "per_class_iou", "per_class_f1"]  # 输出指标集合。
+  reduction: "pixel_confusion_matrix"  # 先聚合像元混淆矩阵，再计算指标。
+  ignore_index: 255  # 所有指标计算时忽略的标签值。
+  eco_holdout_missing_class_policy: "mark_na_and_average_present_classes"  # 生态留出集中缺类时的处理策略。
+
+output:
+  root_dir: "outputs/train_runs/formal"  # formal 训练产物根目录（与 smoke 结果隔离）。
+  save_best_by: "val_miou"  # 选取最佳 checkpoint 的指标。
+  save_last: true  # 是否保存最后一轮 checkpoint。
+  save_confusion_matrix: true  # 是否保存混淆矩阵 CSV。
+  save_per_class_metrics: true  # 是否保存每类指标 CSV。
+  save_prediction_visuals: false  # 是否额外导出预测可视化图。
+
+reproducibility:
+  write_config_snapshot: true  # 将解析后的配置快照保存到 run 目录。
+  record_git_commit: true  # 记录当前 git commit，便于追溯。
+  record_dataset_fingerprint: true  # 记录数据指纹引用及校验结果。
+  record_environment: true  # 记录 Python/依赖/设备环境摘要。

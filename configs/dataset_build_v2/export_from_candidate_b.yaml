@@ -1,0 +1,16 @@
+tiles_manifest: data/processed/vit_dataset/v2/manifests_dryrun_candidate_b/tiles_manifest.csv
+manifests_dir: data/processed/vit_dataset/v2/manifests_dryrun_candidate_b
+output_root: data/processed/vit_dataset/v2
+
+imagery_11block: data/interim/imagery_1m_aligned/tdop_11block_1m_aligned.tif
+label_11block: data/interim/labels_1m_aligned/lumid_11block_1m_aligned.tif
+imagery_2swd: data/interim/imagery_1m_aligned/tdop_2swd_1m_aligned.tif
+label_2swd: data/interim/labels_1m_aligned/lumid_2swd_1m_aligned.tif
+
+copy_manifests: true
+no_overwrite: false
+max_tiles: 0
+progress_every: 100
+progress_seconds: 8.0
+show_gdal_warnings: false
+

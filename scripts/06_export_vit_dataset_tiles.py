@@ -21,6 +21,7 @@ from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
+import yaml
 
 try:
     from osgeo import gdal, osr
@@ -95,6 +96,20 @@ def to_abs_path(path_str: str) -> Path:
 
 def ensure_dir(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
+
+
+def load_yaml_config(path_ref: str | None) -> dict[str, object]:
+    """读取 YAML 配置文件。"""
+    if not path_ref:
+        return {}
+    cfg_path = to_abs_path(path_ref)
+    if not cfg_path.exists():
+        raise FileNotFoundError(f"配置文件不存在：{cfg_path}")
+    with cfg_path.open("r", encoding="utf-8") as f:
+        payload = yaml.safe_load(f) or {}
+    if not isinstance(payload, dict):
+        raise ValueError(f"配置文件顶层必须是映射(dict)：{cfg_path}")
+    return payload
 
 
 def log(msg: str) -> None:
@@ -242,8 +257,26 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    pre_parser = argparse.ArgumentParser(add_help=False)
+    pre_parser.add_argument("--config", default="", help="YAML 配置文件路径（可选）")
+    pre_args, remaining = pre_parser.parse_known_args()
+
+    args = build_parser().parse_args(remaining)
     require_deps()
-    args = build_parser().parse_args()
+
+    # 规则：命令行显式传入的参数优先，YAML 仅补充未显式给出的参数。
+    provided_flags = {
+        token[2:].replace("-", "_")
+        for token in remaining
+        if token.startswith("--")
+    }
+    yaml_cfg = load_yaml_config(pre_args.config)
+    for key, value in yaml_cfg.items():
+        attr = str(key).replace("-", "_")
+        if hasattr(args, attr) and attr not in provided_flags:
+            setattr(args, attr, value)
+    if pre_args.config:
+        log(f"[config] loaded: {to_abs_path(pre_args.config)}")
 
     tiles_manifest = to_abs_path(args.tiles_manifest)
     manifests_dir = to_abs_path(args.manifests_dir)

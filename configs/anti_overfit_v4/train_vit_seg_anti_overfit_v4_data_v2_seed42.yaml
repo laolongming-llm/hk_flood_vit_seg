@@ -1,0 +1,15 @@
+# v4 训练配置（使用数据侧重构后的 v2 数据集 + 平衡 train manifest）
+base_config: "configs/anti_overfit_v4/train_vit_seg_anti_overfit_v4.yaml"
+
+experiment:
+  run_name: "vit_seg_anti_overfit_v4_data_v2_seed42"
+  seed: 42
+
+data:
+  dataset_root: "data/processed/vit_dataset/v2"
+  manifest_path: "data/processed/vit_dataset/v2/manifests/tiles_manifest_balanced_train.csv"
+
+freeze:
+  # v2 数据集冻结后，建议改为 true 并指向 v2 指纹文件。
+  verify_fingerprint_on_start: false
+

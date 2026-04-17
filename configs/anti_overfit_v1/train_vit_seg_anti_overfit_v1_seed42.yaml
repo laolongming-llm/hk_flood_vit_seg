@@ -1,0 +1,10 @@
+﻿# 闃茶繃鎷熷悎瀹為獙 seed=42
+base_config: "configs/anti_overfit_v1/train_vit_seg_anti_overfit_v1.yaml"
+
+experiment:
+  run_name: "vit_seg_anti_overfit_v1_seed42"
+  seed: 42
+
+output:
+  run_subdir: "vit_seg_anti_overfit_v1_seed42"
+

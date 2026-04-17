@@ -1,0 +1,38 @@
+﻿# 闃茶繃鎷熷悎绗簩杞厤缃紙鍩轰簬 baseline 缁ф壙锛?# 璁捐鐩爣锛?# 1) 淇濈暀 v1 涓€滄姂鍒惰繃鎷熷悎鈥濈殑鏂瑰悜锛?# 2) 閫傚害闄嶄綆姝ｅ垯涓庡寮哄己搴︼紝缂撹В鏃╂湡杩囨嫙鍚堟姂鍒惰繃寮哄鑷寸殑娆犳嫙鍚?娉㈠姩锛?# 3) 灏?max_epochs 浠?80 鏀剁缉鍒?40锛岀缉鐭暱灏炬棤鏁堣缁冩椂闂淬€?base_config: "configs/baseline_v1/train_vit_seg_baseline_v1.yaml"
+
+experiment:
+  name: "vit_seg_anti_overfit_v2"
+  run_name: "vit_seg_anti_overfit_v2_seed42"
+
+data:
+  augmentation:
+    enabled: true
+    # 绌洪棿澧炲己淇濇寔涓瓑寮哄害
+    hflip_prob: 0.5
+    vflip_prob: 0.5
+    rot90_prob: 0.4
+    # 鍏夎氨澧炲己浠?v1 鐨勮緝寮鸿缃洖璋?    color_jitter_prob: 0.35
+    brightness_delta: 0.08
+    contrast_delta: 0.08
+    channel_scale_prob: 0.2
+    channel_scale_delta: 0.05
+    # 鍣０澧炲己涓嬭皟锛岄伩鍏嶆壈鍔ㄨ繃寮虹牬鍧忕粏绮掑害杈圭晫瀛︿範
+    gaussian_noise_prob: 0.1
+    gaussian_noise_std: 0.01
+
+model:
+  # v1=0.2锛屽洖璋冭嚦 0.15锛屽噺灏戞瑺鎷熷悎椋庨櫓
+  dropout: 0.15
+
+optimizer:
+  # v1=0.03锛屽洖璋冭嚦 0.02
+  weight_decay: 0.02
+
+loss:
+  # v1=0.05锛屽洖璋冭嚦 0.02
+  label_smoothing: 0.02
+
+train:
+  # 缁х画浣跨敤杈冪揣鍑戞棭鍋滅瓥鐣?  early_stopping_patience: 8
+  # 鐢?baseline/v1 鐨?80 璋冩暣涓?40锛岄厤鍚堟棭鍋滆妭鐪佽缁冩椂闀?  max_epochs: 40
+

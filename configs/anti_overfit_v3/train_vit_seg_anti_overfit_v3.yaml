@@ -1,0 +1,44 @@
+﻿# 闃茶繃鎷熷悎绗笁杞厤缃紙鍩轰簬 baseline 缁ф壙锛?# 鐩爣锛氬湪 v2 鐨勫熀纭€涓婅繘涓€姝モ€滅ǔ鏇茬嚎鈥濓紝璁╅獙璇佹寚鏍囨尝鍔ㄦ洿鍙帶銆?#
+# 鍏抽敭鎬濊矾锛?# 1) 闄嶄綆鍩虹瀛︿範鐜?+ 鎷夐暱 warmup锛屽噺灏忓弬鏁版洿鏂版姈鍔紱
+# 2) 浣跨敤姊害绱Н锛屾彁鍗囩瓑鏁?batch锛岄檷浣庡皬鎵归噺鍣０锛?# 3) 閫傚害鎻愬崌姝ｅ垯锛坉ropout / weight_decay / label_smoothing锛夛紱
+# 4) 闄嶄綆澧炲己鎵板姩寮哄害锛岄伩鍏嶁€滆繃寮哄寮?+ 灏忔牱鏈€濆甫鏉ョ殑楠岃瘉闇囪崱銆?base_config: "configs/baseline_v1/train_vit_seg_baseline_v1.yaml"
+
+experiment:
+  name: "vit_seg_anti_overfit_v3"
+  run_name: "vit_seg_anti_overfit_v3_seed42"
+
+data:
+  augmentation:
+    enabled: true
+    # 绌洪棿澧炲己淇濈暀锛屼絾鐣ヤ綆浜?v2锛屽噺灏戝嚑浣曟壈鍔ㄥ甫鏉ョ殑璁粌涓嶇ǔ瀹氥€?    hflip_prob: 0.5
+    vflip_prob: 0.5
+    rot90_prob: 0.3
+    # 鍏夎氨澧炲己缁х画淇濈暀锛屽己搴︿笅璋冿紝浼樺厛鈥滅ǔ鎬佹硾鍖栤€濄€?    color_jitter_prob: 0.25
+    brightness_delta: 0.06
+    contrast_delta: 0.06
+    channel_scale_prob: 0.15
+    channel_scale_delta: 0.04
+    # 鍣０澧炲己杩涗竴姝ュ噺寮憋紝閬垮厤杈圭晫缁嗚妭琚繃搴︽壈鍔ㄣ€?    gaussian_noise_prob: 0.08
+    gaussian_noise_std: 0.008
+
+model:
+  # 鐩告瘮 v2(0.15) 鐣ュ锛岃繘涓€姝ユ姂鍒跺悗鏈熻蹇嗗寲銆?  dropout: 0.18
+
+optimizer:
+  # 闄嶄綆瀛︿範鐜囷紝鎹㈠彇鏇村钩婊戠殑楠岃瘉鏇茬嚎銆?  lr: 0.00007
+  # 鐣ュ鏉冮噸琛板噺锛岄厤鍚堣緝浣?lr 鎶戝埗杩囨嫙鍚堛€?  weight_decay: 0.025
+
+scheduler:
+  # 鎷夐暱 warmup锛屽噺灏忓墠鍑犺疆鍙傛暟闇囪崱銆?  warmup_epochs: 5
+  # 浣跨敤鏇寸嚎鎬х殑琛板噺锛岄伩鍏嶄腑鍚庢湡瀛︿範鐜囦笅闄嶈繃鎱€?  power: 1.0
+  # 閫傚害鎶珮涓嬮檺锛岄伩鍏嶅悗鏈熷涔犵巼杩囦綆瀵艰嚧鈥滄棤鏁堟姈鍔ㄢ€濄€?  min_lr: 0.000003
+
+loss:
+  # 绋嶅己浜?v2(0.02)锛屽急浜?v1(0.05)銆?  label_smoothing: 0.03
+
+train:
+  # 灏嗘渶澶?epoch 缁存寔鍦?40锛岀粨鍚堟棭鍋滄帶鍒舵€绘椂闀裤€?  max_epochs: 40
+  # 鏀惧鑰愬績鍊硷紝缁欎腑鍚庢湡灏忓箙鍙嶅脊鐣欑┖闂淬€?  early_stopping_patience: 10
+  # 姊害绱Н鎻愬崌绛夋晥 batch锛?x锛夛紝甯哥敤浜庨檷浣庡皬 batch 鍣０銆?  grad_accum_steps: 2
+  # 鐣ユ敹绱ф搴﹁鍓紝鍑忓皯鍋跺彂澶ф搴︽洿鏂般€?  grad_clip_norm: 0.7
+

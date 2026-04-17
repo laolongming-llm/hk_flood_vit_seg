@@ -1,0 +1,18 @@
+﻿# 闃茶繃鎷熷悎绗洓杞厤缃紙鍩轰簬 v3 缁ф壙锛?# 鐩爣锛氬湪 v3 绋虫€佺瓥鐣ュ熀纭€涓婏紝杩涗竴姝ョ紦瑙ｇ被鍒瀬涓嶅钩琛″鑷寸殑 mIoU 娉㈠姩銆?#
+# 鏍稿績鏂板锛?# 1) 鍚敤鑷姩绫诲埆鏉冮噸锛堟寜璁粌闆嗙被鍒儚鍏冩暟鐨勨€滃钩鏂规牴閫嗛鐜団€濊绠楋級锛?# 2) 閰嶅悎鏉冮噸涓婁笅闄愭埅鏂紝閬垮厤绋€鏈夌被鏉冮噸杩囧ぇ閫犳垚璁粌涓嶇ǔ瀹氥€?base_config: "configs/anti_overfit_v3/train_vit_seg_anti_overfit_v3.yaml"
+
+experiment:
+  name: "vit_seg_anti_overfit_v4"
+  run_name: "vit_seg_anti_overfit_v4_seed42"
+
+loss:
+  # 璁粌鑴氭湰鏀寔锛?  # - auto_inverse_freq
+  # - auto_sqrt_inverse_freq
+  # 寤鸿鍏堢敤 sqrt 鐗堟湰锛岀ǔ瀹氭€ч€氬父鏇村ソ銆?  class_weights: "auto_sqrt_inverse_freq"
+  class_weights_floor: 0.3
+  class_weights_cap: 3.0
+  # 鍏抽棴 clip 鍚庡啀褰掍竴鍖栵紝淇濊瘉 cap/floor 涓ユ牸鐢熸晥銆?  class_weights_renorm_after_clip: false
+
+train:
+  # 浠呭綋 val_miou 鎻愬崌瓒呰繃璇ラ槇鍊兼椂鎵嶈瀹氫负鈥滄湁鏁堟彁鍗団€濓紝鍑忓皯鍣０瑙﹀彂銆?  early_stopping_min_delta: 0.003
+

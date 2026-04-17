@@ -1,0 +1,31 @@
+imagery_11block: data/interim/imagery_1m_aligned/tdop_11block_1m_aligned.tif
+label_11block: data/interim/labels_1m_aligned/lumid_11block_1m_aligned.tif
+imagery_2swd: data/interim/imagery_1m_aligned/tdop_2swd_1m_aligned.tif
+label_2swd: data/interim/labels_1m_aligned/lumid_2swd_1m_aligned.tif
+
+output_dir: data/processed/vit_dataset/v2/manifests_dryrun_candidate_c
+
+patch_size: 512
+train_stride: 192
+eval_stride_11block: 256
+eval_stride_2swd_left: 96
+buffer_m: 512.0
+label_nodata: 255
+
+valid_ratio_train: 0.25
+valid_ratio_valtest: 0.10
+valid_ratio_train_eco: 0.35
+
+split11_train_ratio: 0.70
+split11_val_ratio: 0.15
+split2_left_ratio: 0.30
+split2_left_val_ratio: 0.50
+
+gate_train: 2000
+gate_val: 200
+gate_test_in_domain: 200
+gate_test_eco_holdout: 30
+
+max_tiles: 0
+no_overwrite: false
+

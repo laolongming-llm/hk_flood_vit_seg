@@ -1,0 +1,32 @@
+﻿# 闃茶繃鎷熷悎鐗堟湰閰嶇疆锛堝熀浜?baseline 缁ф壙锛?# 鐩爣锛氬湪涓嶆敼鍔ㄤ换鍔″畾涔変笌璇勪及鍙ｅ緞鐨勫墠鎻愪笅锛屾彁鍗囨硾鍖栫ǔ瀹氭€с€?base_config: "configs/baseline_v1/train_vit_seg_baseline_v1.yaml"
+
+experiment:
+  name: "vit_seg_anti_overfit_v1"
+  run_name: "vit_seg_anti_overfit_v1_seed42"
+
+data:
+  augmentation:
+    enabled: true
+    # 绌洪棿澧炲己锛氶仴鎰熷満鏅€氬父鏂瑰悜涓嶅浐瀹氾紝缈昏浆/90搴︽棆杞彲鏈夋晥鎵╁厖鏍锋湰澶氭牱鎬с€?    hflip_prob: 0.5
+    vflip_prob: 0.5
+    rot90_prob: 0.75
+    # 鍏夎氨澧炲己锛氳交閲忎寒搴?瀵规瘮搴︽姈鍔紝闄嶄綆瀵归噰鏍锋椂娈典笌鎴愬儚鏉′欢鐨勮繃鎷熷悎銆?    color_jitter_prob: 0.6
+    brightness_delta: 0.12
+    contrast_delta: 0.12
+    # 閫氶亾缂╂斁锛氭ā鎷熸尝娈靛搷搴旀尝鍔紝鎻愬崌椴佹鎬с€?    channel_scale_prob: 0.3
+    channel_scale_delta: 0.08
+    # 鍣０澧炲己锛氭姂鍒舵ā鍨嬪绾圭悊鍣０鐨勮繃鎷熷悎銆?    gaussian_noise_prob: 0.2
+    gaussian_noise_std: 0.02
+
+model:
+  # 鎻愰珮 dropout锛岀紦瑙ｉ珮瀹归噺 backbone 鍦ㄥ皬鎵归噺涓婄殑璁板繂鍖栧€惧悜銆?  dropout: 0.2
+
+optimizer:
+  # 鐣ュ鏉冮噸琛板噺锛屾姂鍒跺弬鏁拌繃搴︽斁澶с€?  weight_decay: 0.03
+
+loss:
+  # 鏍囩骞虫粦鐢ㄤ簬缂撹В杩囧害鑷俊棰勬祴锛屾彁楂橀獙璇侀泦娉涘寲绋冲畾鎬с€?  label_smoothing: 0.05
+
+train:
+  # 褰撳墠宸茶瀵熷埌杈冩棭鍑虹幇杩囨嫙鍚堬紝鏀剁揣鏃╁仠鑰愬績鍊笺€?  early_stopping_patience: 8
+

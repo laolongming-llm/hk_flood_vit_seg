@@ -1,0 +1,6 @@
+﻿# baseline 璁粌鐨?seed 涓撶敤瑕嗙洊閰嶇疆锛坰eed=3407锛夈€?# 鐢ㄦ硶寤鸿锛氬厛鍔犺浇涓婚厤缃紝鍐嶅悎骞舵湰瑕嗙洊閰嶇疆銆?
+base_config: "configs/baseline_v1/train_vit_seg_baseline_v1.yaml"  # 涓绘ā鏉胯矾寰勶紝缁ф壙閫氱敤閰嶇疆銆?
+experiment:
+  run_name: "vit_seg_baseline_v1_seed3407"  # 鏈?seed 璇曢獙鐨勫敮涓€杩愯鍚嶃€?  seed: 3407  # 鏈杩愯浣跨敤鐨勯殢鏈虹瀛愩€?
+output:
+  run_subdir: "vit_seg_baseline_v1_seed3407"  # 鍦?outputs/train_runs/formal/ 涓嬬殑瀛愮洰褰曞悕銆?
